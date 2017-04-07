@@ -9,5 +9,5 @@
 ################################################################
 
 # pslot: drop
-drop table if exists pslot;
 drop table if exists rservation;
+drop table if exists pslot;

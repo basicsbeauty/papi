@@ -14,7 +14,12 @@ create table pslot(psid int primary key not null AUTO_INCREMENT,
                    lng decimal(11,8) not null);
 
 # Reservations
-create table rservation(rid int primary key not null,
-                        psid int not null,
-                        startts TIMESTAMP not null,
-                        endts   TIMESTAMP DEFAULT '1970-01-01 00:00:01')
+create table reservation(rid int primary key not null,
+                         psid int not null,
+                         startts TIMESTAMP not null,
+                         endts   TIMESTAMP DEFAULT '1970-01-01 00:00:01',
+
+                        FOREIGN KEY (psid)
+                          REFERENCES pslot(psid)
+                          ON UPDATE CASCADE On DELETE CASCADE
+                        );
