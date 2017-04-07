@@ -24,15 +24,40 @@ class ParkingSlots(Resource):
 
         return jsonify(data)
 
+def bad_request(message):
+    response = jsonify({'message': message})
+    response.status_code = 400
+    return response
+
 class Reservation(Resource):
 
-    def POST(self):
+    def post(self):
+
+        print "1"
 
         # Check for mandatory parameters and type
-        mandatory_params = { 'slot_id':int,
-                             'start_time':}
+        mandatory_params = [ 'slot_id',
+                             'start_time',
+                             'end_time']
+        for v in mandatory_params:
+            if (not v in request.args):
+                return bad_request('Manadatory parameter missing')
 
-api.add_resource(ParkingSlots, '/v1/reservations')
+        # Type checking
+        # Slot ID
+        try:
+            slot_id = int(request.args['slot_id'])
+            end_ts = str(request.args['end_ts'])
+            start_ts = str(request.args['start_ts'])
+        except:
+            return bad_request('Manadatory parameter missing')
+
+        # Insert record into MySQL
+
+
+        return jsonify(data)
+
+api.add_resource(Reservation, '/v1/reservations')
 api.add_resource(ParkingSlots, '/v1/parking-slots')
 
 if __name__ == '__main__':
