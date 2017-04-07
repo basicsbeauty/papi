@@ -5,7 +5,14 @@ from flask_mysqldb import MySQL
 
 app = Flask(__name__)
 api = Api(app)
-mysql = MySQL(app)
+mysql = MySQL()
+
+# MySQL Init
+app.config['MYSQL_DATABASE_USER'] = 'test'
+app.config['MYSQL_DATABASE_PASSWORD'] = 'test'
+app.config['MYSQL_DATABASE_DB'] = 'test'
+app.config['MYSQL_DATABASE_HOST'] = 'localhost'
+mysql.init_app(app)
 
 class ParkingSlots(Resource):
 
@@ -39,21 +46,20 @@ class Reservation(Resource):
         mandatory_params = [ 'slot_id',
                              'start_time',
                              'end_time']
+        print "F: ", request.form
+        print "F: ", request.form.keys()
         for v in mandatory_params:
-            if (not v in request.args):
+            if (not v in request.form.keys()):
                 return bad_request('Manadatory parameter missing')
 
         # Type checking
         # Slot ID
         try:
-            slot_id = int(request.args['slot_id'])
-            end_ts = str(request.args['end_ts'])
-            start_ts = str(request.args['start_ts'])
+            slot_id = int(request.form['slot_id'])
+            end_ts = str(request.form['end_ts'])
+            start_ts = str(request.form['start_ts'])
         except:
-            return bad_request('Manadatory parameter missing')
-
-        # Insert record into MySQL
-
+            return bad_request('Manadatory parameter incorrect type')
 
         return jsonify(data)
 
