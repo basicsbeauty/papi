@@ -17,26 +17,27 @@ api = Api(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://test:test@localhost/test'
 db = SQLAlchemy(app)
 
-# MySQL Init
-# app.config['MYSQL_DATABASE_USER'] = 'test'
-# app.config['MYSQL_DATABASE_PASSWORD'] = 'test'
-# app.config['MYSQL_DATABASE_DB'] = 'test'
-# app.config['MYSQL_DATABASE_HOST'] = 'localhost'
-
 class ParkingSlots(Resource):
 
     GET_REQ_TYPE_ALL = "GET_REQ_TYPE_ALL"
-    GET_REQ_TYPE_FREE = "GET_REQ_TYPE_FREE"
     GET_REQ_TYPE_RADIUS = "GET_REQ_TYPE_RADIUS"
+    GET_REQ_TYPE_RADIUS_FREE = "GET_REQ_TYPE_RADIUS_FREE"
 
     def get(self):
 
-        request_type, a_d = self.getRequestType()
+        a_d = {}
+        request_type = str()
+        try:
+            request_type, a_d = self.getRequestType()
+        except ValueError as ve:
+            return bad_request(ve.message)
+        print "RT: ", request_type
+        print "AD: ", a_d
 
         rows = []
-        if request_type == ParkingSlots.GET_REQ_TYPE_FREE:
-            rows = self.getFree()
-        elif request_type == ParkingSlots.GET_REQ_TYPE_RADIUS:
+        if request_type == ParkingSlots.GET_REQ_TYPE_RADIUS:
+            rows = self.getRadius(a_d['lat'], a_d['lng'], a_d['radius'])
+        elif request_type == ParkingSlots.GET_REQ_TYPE_RADIUS_FREE:
             rows = self.getRadiusFree(a_d['lat'], a_d['lng'], a_d['radius'])
         else:
             rows = self.getAll()
@@ -58,19 +59,41 @@ class ParkingSlots(Resource):
         # GET_REQ_TYPE_RADIUS
         if (URL_PARAM_TAG_LAT in arg_dict) \
            and (URL_PARAM_TAG_LNG in arg_dict) \
-           and (URL_PARAM_TAG_STATE in arg_dict) \
            and (URL_PARAM_TAG_RADIUS in arg_dict):
 
            # Type Checking
            try:
                rdict[URL_PARAM_TAG_LAT] = float(arg_dict[URL_PARAM_TAG_LAT])
                rdict[URL_PARAM_TAG_LNG] = float(arg_dict[URL_PARAM_TAG_LNG])
-               rdict[URL_PARAM_TAG_STATE] = str(arg_dict[URL_PARAM_TAG_STATE])
                rdict[URL_PARAM_TAG_RADIUS] = float(arg_dict[URL_PARAM_TAG_RADIUS])
-               if rdict[URL_PARAM_TAG_STATE].lower() == "free":
-                   request_type = ParkingSlots.GET_REQ_TYPE_RADIUS
+               request_type = ParkingSlots.GET_REQ_TYPE_RADIUS
            except:
                print "Exce: ", sys.exc_info()
+               raise ValueError("Paramter: Invalid Type")
+
+           if (URL_PARAM_TAG_STATE in arg_dict):
+               try:
+                   rdict[URL_PARAM_TAG_STATE] = str(arg_dict[URL_PARAM_TAG_STATE])
+                   if rdict[URL_PARAM_TAG_STATE].lower() == "all":
+                       request_type = ParkingSlots.GET_REQ_TYPE_RADIUS
+                   elif rdict[URL_PARAM_TAG_STATE].lower() == "free":
+                       request_type = ParkingSlots.GET_REQ_TYPE_RADIUS_FREE
+               except:
+                   print "Exce: ", sys.exc_info()
+                   raise ValueError("Paramter: Invalid Type")
+
+           # Range checking
+           LAT_MAX = 90
+           LAT_MIN = -90
+           LNG_MAX = 180
+           LNG_MIN = -180
+           if not ((rdict[URL_PARAM_TAG_LAT] >= LAT_MIN) \
+               and (rdict[URL_PARAM_TAG_LAT] <= LAT_MAX) \
+               and (rdict[URL_PARAM_TAG_LNG] >= LNG_MIN) \
+               and (rdict[URL_PARAM_TAG_LNG] <= LNG_MAX)
+               and (rdict[URL_PARAM_TAG_RADIUS] >= 0)):
+               raise ValueError("Parameter: Invalid Value")
+
         elif (URL_PARAM_TAG_STATE in arg_dict):
 
            # Type & Range Checking
@@ -80,16 +103,14 @@ class ParkingSlots(Resource):
                    request_type = ParkingSlots.GET_REQ_TYPE_FREE
            except:
                print "Exce: ", sys.exc_info()
+               raise ValueError("Invalid Type")
 
         return request_type, rdict
 
     def getAll(self):
         return Pslot.query.all()
 
-    def getFree(self):
-        pass
-
-    def getRadiusFree(self, lat, lng, radius):
+    def getRadius(self, lat, lng, radius):
 
         pslots = self.getAll()
 
@@ -99,8 +120,16 @@ class ParkingSlots(Resource):
         for row in pslots:
             current = tuple([row.lat, row.lng])
             distance = great_circle(target, current).miles
+            # print "T: ", target, " C: ", current, " D: ", distance
             if distance <= radius:
                 rvalue.append(row)
+
+        return rvalue
+
+    def getRadiusFree(self, lat, lng, radius):
+
+        rvalue = []
+        rvalue = self.getRadius(lat, lng, radius)
 
         # Exclude if they are already booked
         for row in rvalue:
@@ -128,47 +157,75 @@ class ParkingSlots(Resource):
         data = []
         for row in rows:
             try:
-                data.append( {"lat": float(row.lat), "lng": float(row.lng), "psid": row.psid})
+                data.append( {"lat": float(row.lat), "lng": float(row.lng), "id": row.psid})
             except:
                 continue
 
         return jsonify({"data": data})
 
-def bad_request(message):
-    response = jsonify({'message': message})
-    response.status_code = 400
-    return response
-
 class Reservations(Resource):
 
     def post(self):
 
-        print "1"
-
         # Check for mandatory parameters and type
-        mandatory_params = [ 'slot_id',
+        mandatory_params = [ 'id',
                              'end_ts',
                              'start_ts']
 
-        print "J: ", request.get_json()
+        # print "J: ", request.get_json()
         request_dict = dict(request.get_json())
-        print "R: ", request_dict
+        # print "R: ", request_dict
+
+        # Mandatory paramters checking
         for k in mandatory_params:
             if (not k in request_dict):
                 return bad_request('Manadatory parameter missing. Paramter name: ' + k)
-        print "All Man Passed"
 
+        # Type checking
+        format = "%Y-%m-%d %H:%M:%S"
         try:
-            slot_id = int(request_dict['slot_id'])
-            end_ts = str(request_dict['end_ts'])
-            start_ts = str(request_dict['start_ts'])
-        except:
+            slot_id = int(request_dict['id'])
+            end_ts = datetime.datetime.strptime(request_dict['end_ts'], format)
+            start_ts = datetime.datetime.strptime(request_dict['start_ts'], format)
+        except ValueError as ve:
             return bad_request('Manadatory parameter incorrect type')
+
+        # Parking Slot: Check validity
+        slot = Pslot.query.filter_by(psid=slot_id).first()
+        if not slot:
+            return bad_request("Parking Slot: %d doesn't exist" % slot_id)
+        # Start Time < End Time
+        if start_ts > end_ts:
+            return bad_request("Start time can't be greater then end time ")
+
+        # There should not any conflicting reservations
+        try:
+            resvs = []
+            resvs = Reservation.query.filter_by(psid=int(slot_id)).all()
+            print "L: ", len(resvs)
+            if len(resvs) == 0:
+                print "In"
+                self.addRow(slot_id, start_ts, end_ts)
+            else:
+                print "out"
+                pass
+        except:
+            return bad_request("Internal Error", 500)
 
         return jsonify(request_dict)
 
+    def addRow(self, slotid, start_ts, end_ts):
+        reserv = Reservation(psid=slotid, startts=start_ts, endts=end_ts)
+        db.session.add(reserv)
+        db.session.commit()
+
     def get(self):
-        return self.toJson(Reservation.query.all())
+        rows = self.getAll()
+        return self.toJson(rows)
+
+    def getAll(self):
+        db.session.expire_all()
+        return Reservation.query.all()
 
     def toJson(self, rows):
 
@@ -178,14 +235,49 @@ class Reservations(Resource):
         data = []
         for row in rows:
             try:
-                data.append( {"rid": row.rid, "psid":row.psid, "start_ts":row.startts, "end_ts:":row.endts})
+                data.append( {"rid": row.rid, "psid":row.psid, "start_ts":str(row.startts), "end_ts:":str(row.endts)})
             except:
                 continue
 
         return jsonify({"data":data})
 
-api.add_resource(Reservations, '/v1/reservations')
+    def delete(self, rid):
+
+        # Type checking
+        try:
+            rid = int(rid)
+        except:
+            return bad_request("Reservation ID must be a integer")
+
+        # Range checking
+        if rid < 1:
+            return bad_request("Reservation ID: Invalid value")
+
+        # Check if there a reservation with that Id
+        record = Reservation.query.filter_by(rid=rid).all()
+        if len(record) == 0:
+            return bad_request("Reservation ID: Doesn't exist", 404)
+        record = record[0]
+
+        try:
+            db.session.query(Reservation).filter(Reservation.rid == record.rid).delete()
+            db.session.commit()
+            db.session.expire_all()
+        except:
+            print "Exce: ", sys.exc_info()
+            return bad_request("Reservation ID: Delete failed", 500)
+
+        response = jsonify()
+        response.status_code = 204
+        return response
+
+def bad_request(message, code=400):
+    response = jsonify({'message': message})
+    response.status_code = code
+    return response
+
 api.add_resource(ParkingSlots, '/v1/parking-slots')
+api.add_resource(Reservations, '/v1/reservations', '/v1/reservations/<rid>')
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
