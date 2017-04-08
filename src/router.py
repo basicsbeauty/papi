@@ -202,12 +202,9 @@ class Reservations(Resource):
         try:
             resvs = []
             resvs = Reservation.query.filter_by(psid=int(slot_id)).all()
-            print "L: ", len(resvs)
             if len(resvs) == 0:
-                print "In"
                 self.addRow(slot_id, start_ts, end_ts)
             else:
-                print "out"
                 pass
         except:
             return bad_request("Internal Error", 500)
@@ -218,13 +215,13 @@ class Reservations(Resource):
         reserv = Reservation(psid=slotid, startts=start_ts, endts=end_ts)
         db.session.add(reserv)
         db.session.commit()
+        print "Record Added"
 
     def get(self):
         rows = self.getAll()
         return self.toJson(rows)
 
     def getAll(self):
-        db.session.expire_all()
         return Reservation.query.all()
 
     def toJson(self, rows):
