@@ -15,6 +15,9 @@ app = Flask(__name__)
 api = Api(app)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://test:test@localhost/test'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ECHO'] = True
+
 db = SQLAlchemy(app)
 
 class ParkingSlots(Resource):
@@ -194,6 +197,11 @@ class Reservations(Resource):
         slot = Pslot.query.filter_by(psid=slot_id).first()
         if not slot:
             return bad_request("Parking Slot: %d doesn't exist" % slot_id)
+
+        # Start Time > NOW()
+        if start_ts < datetime.datetime.now():
+            return bad_request("Start time can't be in the past")
+
         # Start Time < End Time
         if start_ts > end_ts:
             return bad_request("Start time can't be greater then end time ")
@@ -205,11 +213,27 @@ class Reservations(Resource):
             if len(resvs) == 0:
                 self.addRow(slot_id, start_ts, end_ts)
             else:
-                pass
+                for record in resvs:
+                    print 'C: ST: ', start_ts, ' ET: ', end_ts
+                    print 'R: ST: ', record.startts, ' ET: ', record.endts
+
+                    # Overlap check
+                    #  - End time in between the current reservation interval
+                    #  - Start time in between the current reservation interval
+                    #  - New-Start: Current-Start - Current-End: New-End
+                    if ((end_ts >= record.startts) and (end_ts <= record.endts)) \
+                    or ((start_ts >= record.startts) and (start_ts <= record.endts)) \
+                    or ((start_ts <= record.startts) and (end_ts >= record.endts)):
+                        return bad_request("Reservation colflict", 400)
+
+                # Passed all the checks: No conflict
+                self.addRow(slot_id, start_ts, end_ts)
+
         except:
+            print "E: ", sys.exc_info()
             return bad_request("Internal Error", 500)
 
-        return jsonify(request_dict)
+        return jsonify({"data":request_dict})
 
     def addRow(self, slotid, start_ts, end_ts):
         reserv = Reservation(psid=slotid, startts=start_ts, endts=end_ts)
@@ -218,11 +242,18 @@ class Reservations(Resource):
         print "Record Added"
 
     def get(self):
+        rows = []
+        print "R: ", rows
         rows = self.getAll()
         return self.toJson(rows)
 
     def getAll(self):
-        return Reservation.query.all()
+        db.session.flush()
+        rows = []
+        print "R: ", Reservation.query.all()
+        rows = Reservation.query.all()
+        print "R: ", len(Reservation.query.all()), " L: ", len(rows)
+        return rows
 
     def toJson(self, rows):
 
@@ -277,4 +308,4 @@ api.add_resource(ParkingSlots, '/v1/parking-slots')
 api.add_resource(Reservations, '/v1/reservations', '/v1/reservations/<rid>')
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8080)
+    app.run(debug=True, host="0.0.0.0", port=8080)
